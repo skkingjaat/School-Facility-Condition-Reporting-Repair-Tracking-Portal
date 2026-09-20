@@ -1,0 +1,154 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PARENT
+  TEACHER
+  ADMIN
+}
+
+enum IssueCategory {
+  FURNITURE
+  CLASSROOM
+  TOILET_SANITATION
+  ELECTRICAL
+  SAFETY
+  OTHER
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum RepairStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole
+  schoolId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reportedIssues  Issue[]         @relation("IssueReporter")
+  assignedRepairs RepairTask[]    @relation("RepairAssignee")
+  notifications   Notification[]
+  timelineActions IssueTimeline[] @relation("TimelineActor")
+
+  @@index([schoolId])
+  @@index([role])
+}
+
+model Issue {
+  id                      String        @id @default(cuid())
+  description             String
+  category                IssueCategory
+  location                String
+  priority                IssuePriority
+  status                  IssueStatus   @default(PENDING)
+  estimatedResolutionTime DateTime?
+  reportedBy              String
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  reporter      User            @relation("IssueReporter", fields: [reportedBy], references: [id], onDelete: Cascade)
+  media         IssueMedia[]
+  repairTask    RepairTask?
+  timeline      IssueTimeline[]
+  notifications Notification[]
+
+  @@index([reportedBy])
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model IssueMedia {
+  id        String    @id @default(cuid())
+  issueId   String
+  url       String
+  type      MediaType
+  createdAt DateTime  @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([issueId])
+}
+
+model RepairTask {
+  id          String       @id @default(cuid())
+  issueId     String       @unique
+  assignedTo  String
+  status      RepairStatus @default(ASSIGNED)
+  assignedAt  DateTime     @default(now())
+  completedAt DateTime?
+
+  issue    Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  assignee User  @relation("RepairAssignee", fields: [assignedTo], references: [id])
+
+  @@index([assignedTo])
+  @@index([status])
+}
+
+model IssueTimeline {
+  id          String   @id @default(cuid())
+  issueId     String
+  action      String
+  description String
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  issue Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  actor User  @relation("TimelineActor", fields: [createdBy], references: [id])
+
+  @@index([issueId, createdAt])
+  @@index([createdBy])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  issueId   String?
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issue Issue? @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([issueId])
+  @@index([createdAt])
+}
