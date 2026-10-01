@@ -34,29 +34,41 @@ export async function POST(request: Request) {
       priority,
     } = result.data;
 
-    const issue = await prisma.issue.create({
-      data: {
-        description,
-        category,
-        location,
-        priority,
-        reportedBy: auth.session.userId,
+    const issue = await prisma.$transaction(async (tx) => {
+      const createdIssue = await tx.issue.create({
+        data: {
+          description,
+          category,
+          location,
+          priority,
+          reportedBy: auth.session.userId,
 
-        timeline: {
-          create: {
-            action: "ISSUE_REPORTED",
-            description: "Issue was reported",
-            createdBy: auth.session.userId,
+          timeline: {
+            create: {
+              action: "ISSUE_REPORTED",
+              description: "Issue was reported",
+              createdBy: auth.session.userId,
+            },
           },
         },
-      },
-      include: {
-        timeline: {
-          orderBy: {
-            createdAt: "asc",
+        include: {
+          timeline: {
+            orderBy: {
+              createdAt: "asc",
+            },
           },
         },
-      },
+      });
+
+      await tx.notification.create({
+        data: {
+          userId: auth.session.userId,
+          issueId: createdIssue.id,
+          message: `Your facility issue ${createdIssue.id} has been reported successfully.`,
+        },
+      });
+
+      return createdIssue;
     });
 
     return NextResponse.json(
@@ -96,47 +108,89 @@ export async function GET(request: Request) {
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const category = searchParams.get("category");
+    const requestedSchoolId = searchParams.get("schoolId");
+
+    let schoolId: string | undefined;
+
+    if (auth.session.role === "ADMIN") {
+      schoolId = requestedSchoolId || auth.session.schoolId;
+
+      if (requestedSchoolId) {
+        const { hasAdminSchoolAccess } = await import(
+          "@/lib/auth/admin-school"
+        );
+
+        const hasAccess = await hasAdminSchoolAccess(
+          auth.session.userId,
+          requestedSchoolId
+        );
+
+        if (!hasAccess) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: "You do not have permission to access this school",
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
 
     const issues = await prisma.issue.findMany({
       where: {
-        reporter:
-          auth.session.role === "ADMIN"
+        ...(auth.session.role === "ADMIN"
+          ? {
+            reporter: {
+              schoolId,
+            },
+          }
+          : auth.session.role === "TEACHER"
             ? {
-                schoolId: auth.session.schoolId,
-              }
+              OR: [
+                {
+                  reportedBy: auth.session.userId,
+                },
+                {
+                  repairTask: {
+                    assignedTo: auth.session.userId,
+                  },
+                },
+              ],
+            }
             : {
-                id: auth.session.userId,
-              },
+              reportedBy: auth.session.userId,
+            }),
 
         ...(status
           ? {
-              status: status as
-                | "PENDING"
-                | "IN_PROGRESS"
-                | "RESOLVED",
-            }
+            status: status as
+              | "PENDING"
+              | "IN_PROGRESS"
+              | "RESOLVED",
+          }
           : {}),
 
         ...(priority
           ? {
-              priority: priority as
-                | "LOW"
-                | "MEDIUM"
-                | "HIGH"
-                | "CRITICAL",
-            }
+            priority: priority as
+              | "LOW"
+              | "MEDIUM"
+              | "HIGH"
+              | "CRITICAL",
+          }
           : {}),
 
         ...(category
           ? {
-              category: category as
-                | "FURNITURE"
-                | "CLASSROOM"
-                | "TOILET_SANITATION"
-                | "ELECTRICAL"
-                | "SAFETY"
-                | "OTHER",
-            }
+            category: category as
+              | "FURNITURE"
+              | "CLASSROOM"
+              | "TOILET_SANITATION"
+              | "ELECTRICAL"
+              | "SAFETY"
+              | "OTHER",
+          }
           : {}),
       },
 

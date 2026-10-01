@@ -421,13 +421,13 @@ export async function PATCH(
       });
 
       const notificationMessage =
-        requestedStatus === "IN_PROGRESS"
-          ? `Repair work has started for issue ${issueId}.`
-          : `Repair work has been completed for issue ${issueId}.`;
+    requestedStatus === "IN_PROGRESS"
+        ? `Repair work has started for issue ${issueId}.`
+        : `Your facility issue ${issueId} has been resolved successfully.`;
 
       await tx.notification.create({
         data: {
-          userId: issue.reporter.id,
+          userId: issue.reportedBy,
           issueId,
           message: notificationMessage,
         },

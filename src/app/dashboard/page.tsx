@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Bell,
   Calendar,
   Clock3,
   FileWarning,
   LogOut,
   MapPin,
+  ShieldCheck,
 } from "lucide-react";
 
 type DashboardData = {
@@ -57,6 +59,22 @@ type IssuesResponse = {
   message: string;
   data?: {
     issues: Issue[];
+  };
+};
+
+type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "PARENT" | "TEACHER" | "ADMIN";
+  schoolId: string;
+};
+
+type AuthMeResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    user: AuthUser;
   };
 };
 
@@ -136,6 +154,9 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [issuesError, setIssuesError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [userRole, setUserRole] = useState<
+    "PARENT" | "TEACHER" | "ADMIN" | null
+  >(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -165,6 +186,38 @@ export default function DashboardPage() {
     }
 
     loadDashboard();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const result: AuthMeResponse = await response.json();
+
+        if (!response.ok || !result.success || !result.data) {
+          return;
+        }
+
+        if (!cancelled) {
+          setUserRole(result.data.user.role);
+        }
+      } catch (authError) {
+        console.error("Auth user fetch error:", authError);
+      }
+    }
+
+    void loadCurrentUser();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -370,16 +423,40 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={loggingOut}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-red-400 px-4 text-sm font-medium transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <LogOut className="h-4 w-4" />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/notifications")}
+              aria-label="Open notifications"
+              title="Notifications"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border bg-background transition hover:bg-muted"
+            >
+              <Bell className="h-5 w-5" aria-hidden="true" />
+              <span className="sr-only">Notifications</span>
+            </button>
 
-            {loggingOut ? "Signing out..." : "Logout"}
-          </button>
+            {userRole === "ADMIN" ? (
+              <button
+                type="button"
+                onClick={() => router.push("/admin")}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition hover:bg-muted"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Admin Panel
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-red-400 px-4 text-sm font-medium transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <LogOut className="h-4 w-4" />
+
+              {loggingOut ? "Signing out..." : "Logout"}
+            </button>
+          </div>
         </header>
 
         <section

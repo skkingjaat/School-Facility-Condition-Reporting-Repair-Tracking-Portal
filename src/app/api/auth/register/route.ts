@@ -40,6 +40,25 @@ export async function POST(request: Request) {
             );
         }
 
+        const school = await prisma.school.findUnique({
+            where: {
+                id: schoolId,
+            },
+            select: {
+                id: true,
+            },
+        });
+
+        if (!school) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    message: "The selected school is not registered",
+                },
+                { status: 400 }
+            );
+        }
+
         const hashedPassword = await hashPassword(password);
 
         const user = await prisma.user.create({
@@ -48,7 +67,7 @@ export async function POST(request: Request) {
                 email,
                 password: hashedPassword,
                 role,
-                schoolId,
+                schoolId: school.id,
             },
             select: {
                 id: true,

@@ -98,6 +98,9 @@ export default function NotificationsPage() {
     const [refreshing, setRefreshing] = useState(false);
     const [error, setError] = useState("");
     const [markingId, setMarkingId] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<
+        "PARENT" | "TEACHER" | "ADMIN" | null
+    >(null);
 
     const unreadCount = notifications.filter(
         (notification) => !notification.read
@@ -191,6 +194,45 @@ export default function NotificationsPage() {
         };
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadUserRole() {
+            try {
+                const response = await fetch("/api/auth/me", {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    return;
+                }
+
+                const role = result.data?.user?.role;
+
+                if (
+                    !cancelled &&
+                    (role === "PARENT" ||
+                        role === "TEACHER" ||
+                        role === "ADMIN")
+                ) {
+                    setUserRole(role);
+                }
+            } catch (roleError) {
+                console.error("Fetch user role error:", roleError);
+            }
+        }
+
+        void loadUserRole();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     async function markAsRead(notificationId: string) {
         try {
             setMarkingId(notificationId);
@@ -271,6 +313,16 @@ export default function NotificationsPage() {
                             >
                                 Dashboard
                             </button>
+
+                            {userRole === "ADMIN" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => router.push("/admin")}
+                                    className="inline-flex min-h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted"
+                                >
+                                    Admin Panel
+                                </button>
+                            ) : null}
 
                             <button
                                 type="button"
@@ -487,7 +539,11 @@ export default function NotificationsPage() {
                                                                     aria-hidden="true"
                                                                 />
                                                             )}
-                                                            View Issue
+                                                            {userRole === "TEACHER"
+                                                                ? "Open Repair Issue"
+                                                                : userRole === "ADMIN"
+                                                                    ? "Manage Issue"
+                                                                    : "View Issue"}
                                                         </button>
                                                     </div>
                                                 </div>

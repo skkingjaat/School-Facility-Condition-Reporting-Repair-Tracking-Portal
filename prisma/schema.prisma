@@ -61,13 +61,34 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  reportedIssues  Issue[]         @relation("IssueReporter")
-  assignedRepairs RepairTask[]    @relation("RepairAssignee")
-  notifications   Notification[]
-  timelineActions IssueTimeline[] @relation("TimelineActor")
+  reportedIssues      Issue[]             @relation("IssueReporter")
+  assignedRepairs     RepairTask[]        @relation("RepairAssignee")
+  notifications       Notification[]
+  timelineActions     IssueTimeline[]     @relation("TimelineActor")
+  adminSchoolAccesses AdminSchoolAccess[]
 
   @@index([schoolId])
   @@index([role])
+}
+
+model School {
+  id            String              @id
+  createdAt     DateTime            @default(now())
+  adminAccesses AdminSchoolAccess[]
+}
+
+model AdminSchoolAccess {
+  id        String   @id @default(cuid())
+  adminId   String
+  schoolId  String
+  createdAt DateTime @default(now())
+
+  admin  User   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([adminId, schoolId])
+  @@index([adminId])
+  @@index([schoolId])
 }
 
 model Issue {

@@ -102,7 +102,12 @@ export async function GET(
      * Can view issues belonging to their school.
      */
     if (auth.session.role !== "ADMIN") {
-      if (issue.reportedBy !== auth.session.userId) {
+      const isReporter = issue.reportedBy === auth.session.userId;
+      const isAssignedTeacher =
+        auth.session.role === "TEACHER" &&
+        issue.repairTask?.assignedTo === auth.session.userId;
+
+      if (!isReporter && !isAssignedTeacher) {
         return NextResponse.json(
           {
             success: false,

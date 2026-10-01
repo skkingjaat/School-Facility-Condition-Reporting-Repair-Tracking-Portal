@@ -7,6 +7,8 @@ import {
     BarChart3,
     CheckCircle2,
     Clock3,
+    BellRing,
+    Download,
     Filter,
     Loader2,
     RefreshCw,
@@ -90,6 +92,19 @@ type TeachersResponse = {
     };
 };
 
+type AdminSchool = {
+    id: string;
+};
+
+type AdminSchoolsResponse = {
+    success: boolean;
+    message?: string;
+    data?: {
+        schools: AdminSchool[];
+        currentSchoolId: string;
+    };
+};
+
 const STATUS_OPTIONS: { value: "" | IssueStatus; label: string }[] = [
     { value: "", label: "All statuses" },
     { value: "PENDING", label: "Pending" },
@@ -101,25 +116,25 @@ const PRIORITY_OPTIONS: {
     value: "" | IssuePriority;
     label: string;
 }[] = [
-    { value: "", label: "All priorities" },
-    { value: "LOW", label: "Low" },
-    { value: "MEDIUM", label: "Medium" },
-    { value: "HIGH", label: "High" },
-    { value: "CRITICAL", label: "Critical" },
-];
+        { value: "", label: "All priorities" },
+        { value: "LOW", label: "Low" },
+        { value: "MEDIUM", label: "Medium" },
+        { value: "HIGH", label: "High" },
+        { value: "CRITICAL", label: "Critical" },
+    ];
 
 const CATEGORY_OPTIONS: {
     value: "" | IssueCategory;
     label: string;
 }[] = [
-    { value: "", label: "All categories" },
-    { value: "FURNITURE", label: "Furniture" },
-    { value: "CLASSROOM", label: "Classroom" },
-    { value: "TOILET_SANITATION", label: "Toilet & Sanitation" },
-    { value: "ELECTRICAL", label: "Electrical" },
-    { value: "SAFETY", label: "Safety" },
-    { value: "OTHER", label: "Other" },
-];
+        { value: "", label: "All categories" },
+        { value: "FURNITURE", label: "Furniture" },
+        { value: "CLASSROOM", label: "Classroom" },
+        { value: "TOILET_SANITATION", label: "Toilet & Sanitation" },
+        { value: "ELECTRICAL", label: "Electrical" },
+        { value: "SAFETY", label: "Safety" },
+        { value: "OTHER", label: "Other" },
+    ];
 
 function formatLabel(value: string) {
     return value
@@ -186,11 +201,86 @@ function getRepairClasses(status: RepairStatus) {
     }
 }
 
+function escapeCsvValue(value: string | number | null | undefined) {
+    const normalizedValue =
+        value === null || value === undefined ? "" : String(value);
+
+    return `"${normalizedValue.replace(/"/g, '""')}"`;
+}
+
+function downloadCsvReport(issues: Issue[]) {
+    if (issues.length === 0) {
+        return false;
+    }
+
+    const headers = [
+        "Issue ID",
+        "Description",
+        "Category",
+        "Location",
+        "Priority",
+        "Issue Status",
+        "Reporter",
+        "Reporter Role",
+        "Repair Assignee",
+        "Repair Status",
+        "Created At",
+        "Updated At",
+        "Estimated Resolution Time",
+    ];
+
+    const rows = issues.map((issue) => [
+        issue.id,
+        issue.description,
+        formatLabel(issue.category),
+        issue.location,
+        formatLabel(issue.priority),
+        formatLabel(issue.status),
+        issue.reporter.name,
+        formatLabel(issue.reporter.role),
+        issue.repairTask?.assignee.name ?? "Not assigned",
+        issue.repairTask
+            ? formatLabel(issue.repairTask.status)
+            : "Not assigned",
+        formatDate(issue.createdAt),
+        formatDate(issue.updatedAt),
+        issue.estimatedResolutionTime ?? "Not specified",
+    ]);
+
+    const csvContent = [
+        headers.map(escapeCsvValue).join(","),
+        ...rows.map((row) => row.map(escapeCsvValue).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], {
+        type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const date = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.download = `school-facility-issues-report-${date}.csv`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+
+    return true;
+}
+
 export default function AdminPage() {
     const router = useRouter();
 
     const [issues, setIssues] = useState<Issue[]>([]);
     const [teachers, setTeachers] = useState<Teacher[]>([]);
+    const [schools, setSchools] = useState<AdminSchool[]>([]);
+    const [selectedSchoolId, setSelectedSchoolId] = useState("");
+    const [schoolsLoading, setSchoolsLoading] = useState(true);
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -215,6 +305,9 @@ export default function AdminPage() {
     const [processingIssueId, setProcessingIssueId] = useState<string | null>(
         null
     );
+    const [remindingIssueId, setRemindingIssueId] = useState<string | null>(
+        null
+    );
 
     const fetchIssues = useCallback(
         async (isRefresh = false) => {
@@ -228,6 +321,9 @@ export default function AdminPage() {
                 setError("");
 
                 const params = new URLSearchParams();
+                if (selectedSchoolId) {
+                    params.set("schoolId", selectedSchoolId);
+                }
 
                 if (statusFilter) {
                     params.set("status", statusFilter);
@@ -274,18 +370,30 @@ export default function AdminPage() {
                 setRefreshing(false);
             }
         },
-        [categoryFilter, priorityFilter, statusFilter]
+        [categoryFilter, priorityFilter, selectedSchoolId, statusFilter]
     );
 
     const fetchTeachers = useCallback(async () => {
         try {
             setTeachersLoading(true);
 
-            const response = await fetch("/api/admin/teachers", {
-                method: "GET",
-                credentials: "include",
-                cache: "no-store",
-            });
+            const params = new URLSearchParams();
+
+            if (selectedSchoolId) {
+                params.set("schoolId", selectedSchoolId);
+            }
+
+            const query = params.toString();
+
+            const response = await fetch(
+                query ? `/api/admin/teachers?${query}` : "/api/admin/teachers",
+                {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                }
+            );
+
 
             const result: TeachersResponse = await response.json();
 
@@ -307,6 +415,62 @@ export default function AdminPage() {
         } finally {
             setTeachersLoading(false);
         }
+    }, [selectedSchoolId]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadSchools() {
+            try {
+                setSchoolsLoading(true);
+                setActionError("");
+
+                const response = await fetch("/api/admin/schools", {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                });
+
+                const result: AdminSchoolsResponse = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(
+                        result.message || "Unable to retrieve authorized schools"
+                    );
+                }
+
+                if (!cancelled) {
+                    const availableSchools = result.data?.schools ?? [];
+
+                    setSchools(availableSchools);
+                    setSelectedSchoolId(
+                        result.data?.currentSchoolId ??
+                        availableSchools[0]?.id ??
+                        ""
+                    );
+                }
+            } catch (fetchError) {
+                console.error("Admin schools fetch error:", fetchError);
+
+                if (!cancelled) {
+                    setActionError(
+                        fetchError instanceof Error
+                            ? fetchError.message
+                            : "Unable to retrieve authorized schools"
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setSchoolsLoading(false);
+                }
+            }
+        }
+
+        void loadSchools();
+
+        return () => {
+            cancelled = true;
+        };
     }, []);
 
     useEffect(() => {
@@ -378,52 +542,52 @@ export default function AdminPage() {
     }, [categoryFilter, priorityFilter, statusFilter]);
 
     useEffect(() => {
-    let cancelled = false;
+        let cancelled = false;
 
-    async function loadTeachers() {
-        try {
-            setTeachersLoading(true);
+        async function loadTeachers() {
+            try {
+                setTeachersLoading(true);
 
-            const response = await fetch("/api/admin/teachers", {
-                method: "GET",
-                credentials: "include",
-                cache: "no-store",
-            });
+                const response = await fetch("/api/admin/teachers", {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                });
 
-            const result: TeachersResponse = await response.json();
+                const result: TeachersResponse = await response.json();
 
-            if (!response.ok || !result.success) {
-                throw new Error(
-                    result.message || "Unable to retrieve teachers"
-                );
-            }
+                if (!response.ok || !result.success) {
+                    throw new Error(
+                        result.message || "Unable to retrieve teachers"
+                    );
+                }
 
-            if (!cancelled) {
-                setTeachers(result.data?.teachers ?? []);
-            }
-        } catch (fetchError) {
-            console.error("Admin teachers fetch error:", fetchError);
+                if (!cancelled) {
+                    setTeachers(result.data?.teachers ?? []);
+                }
+            } catch (fetchError) {
+                console.error("Admin teachers fetch error:", fetchError);
 
-            if (!cancelled) {
-                setActionError(
-                    fetchError instanceof Error
-                        ? fetchError.message
-                        : "Unable to retrieve teachers"
-                );
-            }
-        } finally {
-            if (!cancelled) {
-                setTeachersLoading(false);
+                if (!cancelled) {
+                    setActionError(
+                        fetchError instanceof Error
+                            ? fetchError.message
+                            : "Unable to retrieve teachers"
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setTeachersLoading(false);
+                }
             }
         }
-    }
 
-    void loadTeachers();
+        void loadTeachers();
 
-    return () => {
-        cancelled = true;
-    };
-}, []);
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const statistics = useMemo(() => {
         const total = issues.length;
@@ -576,6 +740,64 @@ export default function AdminPage() {
         }
     }
 
+    function handleDownloadReport() {
+        setActionError("");
+        setActionSuccess("");
+
+        if (issues.length === 0) {
+            setActionError("There are no issues available for the current report.");
+            return;
+        }
+
+        downloadCsvReport(issues);
+        setActionSuccess(
+            `Report downloaded successfully with ${issues.length} issue${issues.length === 1 ? "" : "s"
+            }.`
+        );
+    }
+
+    async function handleSendReminder(issueId: string) {
+        setActionError("");
+        setActionSuccess("");
+        setRemindingIssueId(issueId);
+
+        try {
+            const response = await fetch("/api/notifications/reminders", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                credentials: "include",
+                body: JSON.stringify({
+                    issueId,
+                }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(
+                    result.message || "Unable to send pending repair reminder"
+                );
+            }
+
+            setActionSuccess(
+                `Pending repair reminder sent successfully for issue ${issueId}.`
+            );
+        } catch (reminderError) {
+            console.error("Send repair reminder error:", reminderError);
+
+            setActionError(
+                reminderError instanceof Error
+                    ? reminderError.message
+                    : "Unable to send pending repair reminder"
+            );
+        } finally {
+            setRemindingIssueId(null);
+        }
+    }
+
+
     return (
         <main className="min-h-screen bg-muted/30">
             <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -618,6 +840,19 @@ export default function AdminPage() {
 
                             <button
                                 type="button"
+                                onClick={handleDownloadReport}
+                                disabled={loading || issues.length === 0}
+                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <Download
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                />
+                                Download Report
+                            </button>
+
+                            <button
+                                type="button"
                                 onClick={() => {
                                     void fetchIssues(true);
                                     void fetchTeachers();
@@ -626,9 +861,8 @@ export default function AdminPage() {
                                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 <RefreshCw
-                                    className={`h-4 w-4 ${
-                                        refreshing ? "animate-spin" : ""
-                                    }`}
+                                    className={`h-4 w-4 ${refreshing ? "animate-spin" : ""
+                                        }`}
                                     aria-hidden="true"
                                 />
                                 Refresh
@@ -752,7 +986,28 @@ export default function AdminPage() {
                         <h2 className="text-sm font-semibold">Issue Filters</h2>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-3">
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+
+                        <select
+                            value={selectedSchoolId}
+                            onChange={(event) => {
+                                setSelectedSchoolId(event.target.value);
+                                setSelectedTeacherByIssue({});
+                            }}
+                            disabled={schoolsLoading || schools.length === 0}
+                            className="min-h-10 rounded-md border bg-background px-3 text-sm outline-none transition-colors focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                            aria-label="Select school"
+                        >
+                            <option value="">
+                                {schoolsLoading ? "Loading schools..." : "Select school"}
+                            </option>
+
+                            {schools.map((school) => (
+                                <option key={school.id} value={school.id}>
+                                    {school.id}
+                                </option>
+                            ))}
+                        </select>
                         <select
                             value={statusFilter}
                             onChange={(event) =>
@@ -1044,48 +1299,65 @@ export default function AdminPage() {
                                                             {issue.repairTask
                                                                 .status ===
                                                                 "ASSIGNED" && (
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={
-                                                                        processing
-                                                                    }
-                                                                    onClick={() =>
-                                                                        void updateRepairStatus(
-                                                                            issue.id,
-                                                                            "IN_PROGRESS"
-                                                                        )
-                                                                    }
-                                                                    className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                                                                >
-                                                                    {processing && (
-                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                    )}
-                                                                    Start Repair
-                                                                </button>
-                                                            )}
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            processing
+                                                                        }
+                                                                        onClick={() =>
+                                                                            void updateRepairStatus(
+                                                                                issue.id,
+                                                                                "IN_PROGRESS"
+                                                                            )
+                                                                        }
+                                                                        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                                                                    >
+                                                                        {processing && (
+                                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                        )}
+                                                                        Start Repair
+                                                                    </button>
+                                                                )}
 
                                                             {issue.repairTask
                                                                 .status ===
                                                                 "IN_PROGRESS" && (
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            processing
+                                                                        }
+                                                                        onClick={() =>
+                                                                            void updateRepairStatus(
+                                                                                issue.id,
+                                                                                "COMPLETED"
+                                                                            )
+                                                                        }
+                                                                        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                                                                    >
+                                                                        {processing && (
+                                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                        )}
+                                                                        Complete Repair
+                                                                    </button>
+                                                                )}
+                                                            {issue.status === "PENDING" &&
+                                                                issue.repairTask ? (
                                                                 <button
                                                                     type="button"
+                                                                    onClick={() => handleSendReminder(issue.id)}
                                                                     disabled={
-                                                                        processing
+                                                                        remindingIssueId === issue.id ||
+                                                                        processingIssueId === issue.id
                                                                     }
-                                                                    onClick={() =>
-                                                                        void updateRepairStatus(
-                                                                            issue.id,
-                                                                            "COMPLETED"
-                                                                        )
-                                                                    }
-                                                                    className="inline-flex min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                                                                    className="inline-flex ml-2 min-h-9 items-center justify-center gap-2 rounded-md border px-3 text-xs font-medium transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
                                                                 >
-                                                                    {processing && (
-                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                                                    )}
-                                                                    Complete Repair
+                                                                    <BellRing className="h-4 w-4" aria-hidden="true" />
+                                                                    {remindingIssueId === issue.id
+                                                                        ? "Sending..."
+                                                                        : "Send Reminder"}
                                                                 </button>
-                                                            )}
+                                                            ) : null}
                                                         </div>
                                                     ) : (
                                                         <div className="space-y-2">
@@ -1095,7 +1367,7 @@ export default function AdminPage() {
                                                                     Loading teachers...
                                                                 </div>
                                                             ) : teachers.length ===
-                                                              0 ? (
+                                                                0 ? (
                                                                 <p className="text-xs text-muted-foreground">
                                                                     No teachers
                                                                     available
@@ -1107,8 +1379,8 @@ export default function AdminPage() {
                                                                     <select
                                                                         value={
                                                                             selectedTeacherByIssue[
-                                                                                issue
-                                                                                    .id
+                                                                            issue
+                                                                                .id
                                                                             ] ??
                                                                             ""
                                                                         }
@@ -1174,6 +1446,8 @@ export default function AdminPage() {
                                                                         )}
                                                                         Assign Repair
                                                                     </button>
+
+
                                                                 </>
                                                             )}
                                                         </div>
@@ -1300,7 +1574,7 @@ export default function AdminPage() {
                                                     <p className="font-medium">
                                                         {issue.repairTask
                                                             ? issue.repairTask
-                                                                  .assignee.name
+                                                                .assignee.name
                                                             : "Not assigned"}
                                                     </p>
                                                 </div>
@@ -1313,7 +1587,7 @@ export default function AdminPage() {
                                                 </p>
 
                                                 {issue.repairTask ? (
-                                                    <div className="space-y-2">
+                                                    <div className="space-y-2 ">
                                                         <p className="text-sm">
                                                             Assigned to{" "}
                                                             <span className="font-medium">
@@ -1329,48 +1603,63 @@ export default function AdminPage() {
                                                         {issue.repairTask
                                                             .status ===
                                                             "ASSIGNED" && (
-                                                            <button
-                                                                type="button"
-                                                                disabled={
-                                                                    processing
-                                                                }
-                                                                onClick={() =>
-                                                                    void updateRepairStatus(
-                                                                        issue.id,
-                                                                        "IN_PROGRESS"
-                                                                    )
-                                                                }
-                                                                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                                                            >
-                                                                {processing && (
-                                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                                )}
-                                                                Start Repair
-                                                            </button>
-                                                        )}
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={
+                                                                        processing
+                                                                    }
+                                                                    onClick={() =>
+                                                                        void updateRepairStatus(
+                                                                            issue.id,
+                                                                            "IN_PROGRESS"
+                                                                        )
+                                                                    }
+                                                                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                                                                >
+                                                                    {processing && (
+                                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                                    )}
+                                                                    Start Repair
+                                                                </button>
+                                                            )}
 
                                                         {issue.repairTask
                                                             .status ===
                                                             "IN_PROGRESS" && (
-                                                            <button
-                                                                type="button"
-                                                                disabled={
-                                                                    processing
-                                                                }
-                                                                onClick={() =>
-                                                                    void updateRepairStatus(
-                                                                        issue.id,
-                                                                        "COMPLETED"
-                                                                    )
-                                                                }
-                                                                className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                                                            >
-                                                                {processing && (
-                                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                                )}
-                                                                Complete Repair
-                                                            </button>
-                                                        )}
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={
+                                                                        processing
+                                                                    }
+                                                                    onClick={() =>
+                                                                        void updateRepairStatus(
+                                                                            issue.id,
+                                                                            "COMPLETED"
+                                                                        )
+                                                                    }
+                                                                    className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-medium transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                                                                >
+                                                                    {processing && (
+                                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                                    )}
+                                                                    Complete Repair
+                                                                </button>
+                                                            )}
+                                                        {issue.status === "PENDING" &&
+                                                            issue.repairTask.status === "ASSIGNED" && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSendReminder(issue.id)}
+                                                                    disabled={remindingIssueId === issue.id}
+                                                                    className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                >
+                                                                    <BellRing className="h-4 w-4" />
+                                                                    {remindingIssueId === issue.id
+                                                                        ? "Sending..."
+                                                                        : "Send Reminder"}
+                                                                </button>
+                                                            )}
+
                                                     </div>
                                                 ) : teachersLoading ? (
                                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1387,7 +1676,7 @@ export default function AdminPage() {
                                                         <select
                                                             value={
                                                                 selectedTeacherByIssue[
-                                                                    issue.id
+                                                                issue.id
                                                                 ] ?? ""
                                                             }
                                                             onChange={(
@@ -1448,6 +1737,8 @@ export default function AdminPage() {
                                                             )}
                                                             Assign Repair
                                                         </button>
+
+
                                                     </div>
                                                 )}
                                             </div>

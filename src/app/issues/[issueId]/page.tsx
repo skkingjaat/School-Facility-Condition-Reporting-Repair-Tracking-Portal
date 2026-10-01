@@ -10,6 +10,7 @@ import {
     Clock3,
     FileText,
     Image as ImageIcon,
+    Loader2,
     MapPin,
     User,
     Wrench,
@@ -178,11 +179,41 @@ export default function IssueTrackingPage() {
     const [issue, setIssue] = useState<Issue | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const [userId, setUserId] = useState("");
+    const [userRole, setUserRole] = useState("");
+    const [updatingRepair, setUpdatingRepair] = useState(false);
+    const [repairError, setRepairError] = useState("");
+
+
+    useEffect(() => {
+        async function loadCurrentUser() {
+            try {
+                const response = await fetch("/api/auth/me", {
+                    method: "GET",
+                    credentials: "include",
+                    cache: "no-store",
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success && result.data?.user) {
+                    setUserId(result.data.user.id);
+                    setUserRole(result.data.user.role);
+                }
+            } catch {
+                // The issue API still controls access if the user cannot be loaded here.
+            }
+        }
+
+        loadCurrentUser();
+    }, []);
 
     useEffect(() => {
         if (!issueId) {
             return;
         }
+
+        
 
         async function loadIssue() {
             try {
@@ -212,6 +243,64 @@ export default function IssueTrackingPage() {
 
         loadIssue();
     }, [issueId]);
+
+
+    async function handleRepairStatusUpdate(
+            requestedStatus: "IN_PROGRESS" | "COMPLETED"
+        ) {
+            if (!issue?.repairTask) return;
+
+            setUpdatingRepair(true);
+            setRepairError("");
+
+            try {
+                const response = await fetch(`/api/issues/${issue.id}/repair`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        status: requestedStatus,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || "Unable to update repair status");
+                }
+
+                setIssue((currentIssue) => {
+                    if (!currentIssue || !currentIssue.repairTask) {
+                        return currentIssue;
+                    }
+
+                    return {
+                        ...currentIssue,
+                        status:
+                            requestedStatus === "COMPLETED"
+                                ? "RESOLVED"
+                                : "IN_PROGRESS",
+                        updatedAt: new Date().toISOString(),
+                        repairTask: {
+                            ...currentIssue.repairTask,
+                            status: requestedStatus,
+                        },
+                    };
+                });
+            } catch (repairUpdateError) {
+                console.error("Repair status update error:", repairUpdateError);
+
+                setRepairError(
+                    repairUpdateError instanceof Error
+                        ? repairUpdateError.message
+                        : "Unable to update repair status"
+                );
+            } finally {
+                setUpdatingRepair(false);
+            }
+        }
 
     if (loading) {
         return (
@@ -537,6 +626,55 @@ export default function IssueTrackingPage() {
                                         </p>
                                     </div>
                                 ) : null}
+
+                                {userRole === "TEACHER" &&
+                                    issue.repairTask.assignedTo === userId ? (
+                                    <div className="border-t pt-4">
+                                        {repairError ? (
+                                            <div className="mb-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                                                {repairError}
+                                            </div>
+                                        ) : null}
+
+                                        {issue.repairTask.status === "ASSIGNED" ? (
+                                            <button
+                                                type="button"
+                                                disabled={updatingRepair}
+                                                onClick={() =>
+                                                    handleRepairStatusUpdate("IN_PROGRESS")
+                                                }
+                                                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {updatingRepair ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <Wrench className="h-4 w-4" />
+                                                )}
+                                                {updatingRepair ? "Starting Repair..." : "Start Repair"}
+                                            </button>
+                                        ) : issue.repairTask.status === "IN_PROGRESS" ? (
+                                            <button
+                                                type="button"
+                                                disabled={updatingRepair}
+                                                onClick={() =>
+                                                    handleRepairStatusUpdate("COMPLETED")
+                                                }
+                                                className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                {updatingRepair ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <CheckCircle2 className="h-4 w-4" />
+                                                )}
+                                                {updatingRepair
+                                                    ? "Completing Repair..."
+                                                    : "Complete Repair"}
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
+
                             </div>
                         ) : (
                             <div className="mt-6 rounded-lg border bg-muted/40 p-5">
@@ -590,7 +728,7 @@ export default function IssueTrackingPage() {
                                                 alt="Issue attachment"
                                                 width={640}
                                                 height={360}
-                                                
+
                                                 className="aspect-video w-full object-cover transition hover:scale-[1.02]"
                                             />
                                         </a>

@@ -1,10 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type UserRole = "PARENT" | "TEACHER";
+
+type School = {
+    id: string;
+};
 
 export default function Register() {
     const router = useRouter();
@@ -16,8 +20,45 @@ export default function Register() {
     const [role, setRole] = useState<UserRole>("PARENT");
     const [schoolId, setSchoolId] = useState("");
 
+    const [schools, setSchools] = useState<School[]>([]);
+    const [schoolsLoading, setSchoolsLoading] = useState(true);
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadSchools() {
+            try {
+                const response = await fetch("/api/schools");
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || "Unable to load schools");
+                }
+
+                if (!cancelled) {
+                    setSchools(result.data.schools);
+                }
+            } catch {
+                if (!cancelled) {
+                    setError("Unable to load registered schools");
+                }
+            } finally {
+                if (!cancelled) {
+                    setSchoolsLoading(false);
+                }
+            }
+        }
+
+        void loadSchools();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     async function handleSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -54,12 +95,16 @@ export default function Register() {
         }
 
         if (!trimmedSchoolId) {
-            setError("School ID is required");
+            setError("Please select your school");
             return;
         }
 
-        if (trimmedSchoolId.length > 100) {
-            setError("School ID must not exceed 100 characters");
+        const schoolExists = schools.some(
+            (school) => school.id === trimmedSchoolId
+        );
+
+        if (!schoolExists) {
+            setError("Please select a valid registered school");
             return;
         }
 
@@ -98,9 +143,16 @@ export default function Register() {
                         (messages) => messages && messages.length > 0
                     )?.[0];
 
-                    setError(firstError || result.message || "Please check your details");
+                    setError(
+                        firstError ||
+                            result.message ||
+                            "Please check your details"
+                    );
                 } else {
-                    setError(result.message || "Unable to complete registration");
+                    setError(
+                        result.message ||
+                            "Unable to complete registration"
+                    );
                 }
 
                 return;
@@ -125,7 +177,8 @@ export default function Register() {
                         </h1>
 
                         <p className="mt-2 text-sm text-muted-foreground">
-                            Register to report and track school facility issues.
+                            Register to report and track school facility
+                            issues.
                         </p>
                     </div>
 
@@ -145,7 +198,9 @@ export default function Register() {
                                 autoComplete="name"
                                 placeholder="Enter your full name"
                                 value={name}
-                                onChange={(event) => setName(event.target.value)}
+                                onChange={(event) =>
+                                    setName(event.target.value)
+                                }
                                 required
                                 disabled={loading}
                                 maxLength={100}
@@ -168,7 +223,9 @@ export default function Register() {
                                 autoComplete="email"
                                 placeholder="Enter your email"
                                 value={email}
-                                onChange={(event) => setEmail(event.target.value)}
+                                onChange={(event) =>
+                                    setEmail(event.target.value)
+                                }
                                 required
                                 disabled={loading}
                                 className="h-11 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
@@ -180,24 +237,38 @@ export default function Register() {
                                 htmlFor="schoolId"
                                 className="text-sm font-medium"
                             >
-                                School ID
+                                School
                             </label>
 
-                            <input
+                            <select
                                 id="schoolId"
                                 name="schoolId"
-                                type="text"
-                                placeholder="Enter your school ID"
                                 value={schoolId}
-                                onChange={(event) => setSchoolId(event.target.value)}
+                                onChange={(event) =>
+                                    setSchoolId(event.target.value)
+                                }
                                 required
-                                disabled={loading}
-                                maxLength={100}
+                                disabled={loading || schoolsLoading}
                                 className="h-11 w-full rounded-md border bg-background px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
-                            />
+                            >
+                                <option value="">
+                                    {schoolsLoading
+                                        ? "Loading schools..."
+                                        : "Select your school"}
+                                </option>
+
+                                {schools.map((school) => (
+                                    <option
+                                        key={school.id}
+                                        value={school.id}
+                                    >
+                                        {school.id}
+                                    </option>
+                                ))}
+                            </select>
 
                             <p className="text-xs text-muted-foreground">
-                                Use the school ID provided by your school.
+                                Select your registered school.
                             </p>
                         </div>
 
@@ -212,10 +283,11 @@ export default function Register() {
                                     onClick={() => setRole("PARENT")}
                                     disabled={loading}
                                     aria-pressed={role === "PARENT"}
-                                    className={`h-11 rounded-md border px-3 text-sm font-medium transition ${role === "PARENT"
+                                    className={`h-11 rounded-md border px-3 text-sm font-medium transition ${
+                                        role === "PARENT"
                                             ? "border-primary bg-primary text-primary-foreground"
                                             : "bg-background hover:bg-muted"
-                                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                                    } disabled:cursor-not-allowed disabled:opacity-60`}
                                 >
                                     Parent
                                 </button>
@@ -225,10 +297,11 @@ export default function Register() {
                                     onClick={() => setRole("TEACHER")}
                                     disabled={loading}
                                     aria-pressed={role === "TEACHER"}
-                                    className={`h-11 rounded-md border px-3 text-sm font-medium transition ${role === "TEACHER"
+                                    className={`h-11 rounded-md border px-3 text-sm font-medium transition ${
+                                        role === "TEACHER"
                                             ? "border-primary bg-primary text-primary-foreground"
                                             : "bg-background hover:bg-muted"
-                                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                                    } disabled:cursor-not-allowed disabled:opacity-60`}
                                 >
                                     Teacher
                                 </button>
@@ -250,7 +323,9 @@ export default function Register() {
                                 autoComplete="new-password"
                                 placeholder="Create a password"
                                 value={password}
-                                onChange={(event) => setPassword(event.target.value)}
+                                onChange={(event) =>
+                                    setPassword(event.target.value)
+                                }
                                 required
                                 disabled={loading}
                                 minLength={8}
@@ -298,10 +373,12 @@ export default function Register() {
 
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || schoolsLoading}
                             className="h-11 w-full rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            {loading ? "Creating account..." : "Create account"}
+                            {loading
+                                ? "Creating account..."
+                                : "Create account"}
                         </button>
                     </form>
 

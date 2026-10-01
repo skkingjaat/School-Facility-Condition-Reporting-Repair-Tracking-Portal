@@ -14,15 +14,28 @@ export async function GET() {
     }
 
     const issueWhere =
-      auth.session.role === "ADMIN"
-        ? {
-            reporter: {
-              schoolId: auth.session.schoolId,
+  auth.session.role === "ADMIN"
+    ? {
+        reporter: {
+          schoolId: auth.session.schoolId,
+        },
+      }
+    : auth.session.role === "TEACHER"
+      ? {
+          OR: [
+            {
+              reportedBy: auth.session.userId,
             },
-          }
-        : {
-            reportedBy: auth.session.userId,
-          };
+            {
+              repairTask: {
+                assignedTo: auth.session.userId,
+              },
+            },
+          ],
+        }
+      : {
+          reportedBy: auth.session.userId,
+        };
 
     const [
       totalIssues,
