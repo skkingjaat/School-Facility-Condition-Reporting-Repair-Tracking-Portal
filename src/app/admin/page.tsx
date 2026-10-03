@@ -612,8 +612,72 @@ export default function AdminPage() {
             (issue) => issue.repairTask !== null
         ).length;
 
+        const resolutionTimes = issues
+            .filter((issue) => issue.status === "RESOLVED")
+            .map((issue) => {
+                const startedAt = issue.timeline.find(
+                    (event) => event.action === "REPAIR_STARTED"
+                )?.createdAt;
+
+                const completedAt = issue.timeline.find(
+                    (event) => event.action === "REPAIR_COMPLETED"
+                )?.createdAt;
+
+                if (!startedAt || !completedAt) {
+                    return null;
+                }
+
+                const duration =
+                    new Date(completedAt).getTime() -
+                    new Date(startedAt).getTime();
+
+                return duration > 0 ? duration : null;
+            })
+            .filter(
+                (duration): duration is number => duration !== null
+            );
+
+        const averageResolutionTime =
+            resolutionTimes.length > 0
+                ? resolutionTimes.reduce(
+                    (totalDuration, duration) =>
+                        totalDuration + duration,
+                    0
+                ) / resolutionTimes.length
+                : null;
+
+        const formatResolutionTime = (
+            milliseconds: number | null
+        ) => {
+            if (milliseconds === null) {
+                return "Not enough data";
+            }
+
+            const totalMinutes = Math.round(
+                milliseconds / (1000 * 60)
+            );
+
+            const days = Math.floor(totalMinutes / (60 * 24));
+            const hours = Math.floor(
+                (totalMinutes % (60 * 24)) / 60
+            );
+            const minutes = totalMinutes % 60;
+
+            if (days > 0) {
+                return `${days}d ${hours}h`;
+            }
+
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            }
+
+            return `${Math.max(minutes, 1)}m`;
+        };
+
         const resolutionRate =
-            total > 0 ? Math.round((resolved / total) * 100) : 0;
+            total > 0
+                ? Math.round((resolved / total) * 100)
+                : 0;
 
         return {
             total,
@@ -623,6 +687,8 @@ export default function AdminPage() {
             critical,
             assigned,
             resolutionRate,
+            averageResolutionTime:
+                formatResolutionTime(averageResolutionTime),
         };
     }, [issues]);
 
@@ -959,25 +1025,37 @@ export default function AdminPage() {
                 </section>
 
                 {/* Additional monitoring */}
-                <section className="mb-6 grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-xl border bg-background p-5 shadow-sm">
-                        <p className="text-sm text-muted-foreground">
-                            Repair Tasks Assigned
-                        </p>
-                        <p className="mt-1 text-2xl font-semibold">
-                            {statistics.assigned}
-                        </p>
-                    </div>
+<section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="rounded-xl border bg-background p-5 shadow-sm">
+        <p className="text-sm text-muted-foreground">
+            Average Resolution Time
+        </p>
+        <p className="mt-1 text-2xl font-semibold">
+            {statistics.averageResolutionTime}
+        </p>
+        <p className="mt-2 text-xs text-muted-foreground">
+            Based on completed repair timelines
+        </p>
+    </div>
 
-                    <div className="rounded-xl border bg-background p-5 shadow-sm">
-                        <p className="text-sm text-muted-foreground">
-                            Critical Priority Issues
-                        </p>
-                        <p className="mt-1 text-2xl font-semibold">
-                            {statistics.critical}
-                        </p>
-                    </div>
-                </section>
+    <div className="rounded-xl border bg-background p-5 shadow-sm">
+        <p className="text-sm text-muted-foreground">
+            Repair Tasks Assigned
+        </p>
+        <p className="mt-1 text-2xl font-semibold">
+            {statistics.assigned}
+        </p>
+    </div>
+
+    <div className="rounded-xl border bg-background p-5 shadow-sm">
+        <p className="text-sm text-muted-foreground">
+            Critical Priority Issues
+        </p>
+        <p className="mt-1 text-2xl font-semibold">
+            {statistics.critical}
+        </p>
+    </div>
+</section>
 
                 {/* Filters */}
                 <section className="mb-6 rounded-xl border bg-background p-4 shadow-sm">
