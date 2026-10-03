@@ -550,9 +550,25 @@ export default function HomePage() {
                 <p className="font-semibold">Platform</p>
 
                 <div className="mt-3 space-y-2 ">
-                  <span className="block">Issue Reporting</span>
-                  <span className="block">Repair Tracking</span>
-                  <span className="block">Notifications</span>
+                  <Link
+                    href="login"
+                    className="block hover:text-foreground"
+                  >
+                    Issue Reporting
+                  </Link>
+                  <Link
+                    href="login"
+                    className="block hover:text-foreground"
+                  >
+                    Repair Tracking
+                  </Link>
+                  <Link
+                    href="login"
+                    className="block hover:text-foreground"
+                  >
+                    Notifications
+                  </Link>
+                  
                 </div>
               </div>
             </div>
